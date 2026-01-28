@@ -1,0 +1,310 @@
+# configs/experiments.yaml
+
+defaults:
+  - _self_
+
+# Pick one:
+#   pretrain_autoencoder_mae
+#   pretrain_transformer_contrastive
+#   train_transformer_decoder
+#   train_full_transformer
+#   train_autoencoder_nomask_finetune
+experiment: pretrain_autoencoder_mae
+
+paths:
+  data_root: /path/to/audio_folder
+  out_dir: ./runs
+  checkpoint_dir: ./checkpoints
+
+seed: 1234
+device: cuda
+dtype: fp32         # fp32 | fp16 | bf16
+
+# -----------------------------
+# Data + STFT
+# -----------------------------
+data:
+  batch_size: 8
+  num_workers: 4
+  pin_memory: true
+  drop_last: true
+  shuffle: true
+
+audio:
+  target_sr: 44100
+  clip_seconds: 2.0
+
+stft:
+  n_fft: 1024
+  hop_length: 256
+  win_length: null
+  center: true
+  window: hann
+  magnitude: true
+  log_mag: true
+  eps: 1.0e-8
+
+normalization:
+  # Option A: provide fixed stats (recommended for reproducibility)
+  use_fixed_stats: false
+  mean: 0.0
+  std: 1.0
+  # Option B: compute stats on-the-fly once (set max_files to limit)
+  compute_if_missing: true
+  max_files_for_stats: 2000
+
+masking:
+  # spectrogram bin-level masking (U-Net MAE path)
+  enable_bin_masking: true
+  mask_ratio: 0.45
+  patch_f: 5
+  patch_t: 5
+  mask_value: 0.0
+
+patch_tokens:
+  # transformer patchification (token-level masking)
+  patch_f: 5
+  patch_t: 5
+  mask_ratio: 0.45
+  fixed_count: true
+  max_tokens: 4096
+
+# -----------------------------
+# Models
+# -----------------------------
+models:
+  autoencoder_unet:
+    in_channels: 256           # set to your F bins
+    out_channels: 256
+    base_channels: 128
+    channel_mults: [1, 2, 4, 8]
+    num_blocks_per_level: 2
+    dropout: 0.0
+    groups: 8
+    skip_scale: true
+
+  transformer_encoder:
+    d_model: 512
+    n_layers: 8
+    n_heads: 8
+    d_ff: 2048
+    dropout: 0.1
+    proj_dim: 256              # projection head dim for contrastive
+
+  transformer_decoder:
+    dec_layers: 4
+    dec_heads: 8
+    dec_ff: 2048
+    dropout: 0.1
+    decoder_dim: null          # null => same as encoder d_model
+
+# -----------------------------
+# Losses
+# -----------------------------
+loss:
+  # InverSynth-style spectral losses + your low-mag weighting
+  spec:
+    alpha_l1: 1.0
+    alpha_l2: 1.0
+    alpha_sc: 0.0
+    alpha_log: 0.0
+
+  lowmag:
+    enabled: false
+    eps: 1.0e-4
+    detach_weight: true
+    beta: 0.7
+
+  params:
+    enabled: false
+    weight: 1.0
+    label_smoothing: 0.0
+
+contrastive:
+  temperature: 0.07
+  stop_grad_target: true       # detach k
+  negatives: all_in_batch       # all_in_batch | same_sample_exclude_self (if you implement)
+
+# -----------------------------
+# Optim / Train loop
+# -----------------------------
+optim:
+  name: adamw
+  lr: 3.0e-4
+  weight_decay: 1.0e-2
+  betas: [0.9, 0.999]
+  eps: 1.0e-8
+  grad_clip_norm: 1.0
+
+schedule:
+  name: cosine
+  warmup_steps: 2000
+  total_steps: 200000
+  min_lr: 1.0e-6
+
+train:
+  max_epochs: 200
+  log_every: 50
+  eval_every: 2000
+  save_every: 2000
+  amp: false                   # set true for fp16/bf16
+  compile: false               # torch.compile if you want
+
+# -----------------------------
+# Checkpoints / initialization
+# -----------------------------
+init:
+  # Set these per experiment block below
+  load_encoder_ckpt: null
+  load_decoder_ckpt: null
+  load_autoencoder_ckpt: null
+  strict: false
+
+freeze:
+  encoder: false
+  decoder: false
+  autoencoder: false
+
+
+# ============================================================
+# Experiment presets
+# ============================================================
+
+experiments:
+
+  # 1) Pretrain U-Net autoencoder with MAE-style bin masking
+  pretrain_autoencoder_mae:
+    experiment_name: pretrain_autoencoder_mae
+    task: autoencoder
+    mode: pretrain
+    masking:
+      enable_bin_masking: true
+      mask_ratio: 0.45
+      patch_f: 5
+      patch_t: 5
+    loss:
+      lowmag:
+        enabled: false
+    init:
+      load_autoencoder_ckpt: null
+    freeze:
+      autoencoder: false
+    optim:
+      lr: 3.0e-4
+
+  # 2) Pretrain Transformer encoder with contrastive masked objective
+  pretrain_transformer_contrastive:
+    experiment_name: pretrain_transformer_contrastive
+    task: transformer_encoder
+    mode: pretrain
+    patch_tokens:
+      patch_f: 5
+      patch_t: 5
+      mask_ratio: 0.45
+      fixed_count: true
+    contrastive:
+      temperature: 0.07
+      stop_grad_target: true
+    init:
+      load_encoder_ckpt: null
+    freeze:
+      encoder: false
+    optim:
+      lr: 3.0e-4
+
+  # 3) Train Transformer decoder only (freeze encoder)
+  #    Useful when you have encoder pretrain and want a good recon head
+  train_transformer_decoder:
+    experiment_name: train_transformer_decoder
+    task: transformer_decoder
+    mode: train
+    init:
+      load_encoder_ckpt: ${paths.checkpoint_dir}/encoder_pretrain.ckpt
+      load_decoder_ckpt: null
+      strict: false
+    freeze:
+      encoder: true
+      decoder: false
+    # Usually use reconstruction loss (masked or unmasked depends on your choice)
+    patch_tokens:
+      mask_ratio: 0.45
+    loss:
+      spec:
+        alpha_l1: 1.0
+        alpha_l2: 1.0
+      lowmag:
+        enabled: false
+    optim:
+      lr: 1.0e-4
+
+  # 4) Train full Transformer (encoder + decoder) end-to-end
+  train_full_transformer:
+    experiment_name: train_full_transformer
+    task: full_transformer
+    mode: train
+    init:
+      load_encoder_ckpt: ${paths.checkpoint_dir}/encoder_pretrain.ckpt
+      load_decoder_ckpt: ${paths.checkpoint_dir}/decoder_train.ckpt
+      strict: false
+    freeze:
+      encoder: false
+      decoder: false
+    patch_tokens:
+      mask_ratio: 0.45
+    loss:
+      spec:
+        alpha_l1: 1.0
+        alpha_l2: 1.0
+        alpha_sc: 0.2
+        alpha_log: 0.1
+      lowmag:
+        enabled: true
+        beta: 0.7
+        eps: 1.0e-4
+    optim:
+      lr: 1.0e-4
+
+  # 5) Train autoencoder WITHOUT masking, starting from pretrained weights
+  #    (your "following the pretrained" stage)
+  train_autoencoder_nomask_finetune:
+    experiment_name: train_autoencoder_nomask_finetune
+    task: autoencoder
+    mode: finetune
+    masking:
+      enable_bin_masking: false
+      mask_ratio: 0.0
+    init:
+      load_autoencoder_ckpt: ${paths.checkpoint_dir}/autoencoder_mae_pretrain.ckpt
+      strict: false
+    freeze:
+      autoencoder: false
+    loss:
+      spec:
+        alpha_l1: 1.0
+        alpha_l2: 1.0
+        alpha_sc: 0.2
+        alpha_log: 0.1
+      lowmag:
+        enabled: true
+        beta: 0.7
+    optim:
+      lr: 1.0e-4
+
+# test
+  test_autoencoder:
+    experiment_name: test_autoencoder
+    task: autoencoder
+    mode: test
+    init:
+      load_autoencoder_ckpt: ${paths.checkpoint_dir}/autoencoder_final.pt
+      strict: false
+
+  test_transformer:
+    experiment_name: test_transformer
+    task: full_transformer
+    mode: test
+    init:
+      load_decoder_ckpt: ${paths.checkpoint_dir}/full_transformer_final.pt
+      strict: false
+    patch_tokens:
+      mask_ratio: 0.0
