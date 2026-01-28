@@ -49,15 +49,24 @@ Please cite / reference these works when using this code:
 ---
 
 ## Installation
+### Create virtual environment
+1. Create the environment
+conda env create -f environment.yml
+2. conda activate inversynth-extensions
 
-### Create environment
-Python 3.10+ recommended.
 
-python -m venv .venv
+[//]: # (### Create environment)
 
-source .venv/bin/activate   # (Linux/macOS)
+[//]: # (Python 3.10+ recommended.)
 
-pip install -U pip
+[//]: # ()
+[//]: # (python -m venv .venv)
+
+[//]: # ()
+[//]: # (source .venv/bin/activate   # &#40;Linux/macOS&#41;)
+
+[//]: # ()
+[//]: # (pip install -U pip)
 
 ## Training Stages
 
@@ -97,7 +106,7 @@ Train on full spectrogram reconstruction without masking.
 
 Evaluates average losses and logs to TensorBoard.
 
-### Running
+[//]: # (### Running)
 ## Run everything (pretrain → train → test)
 python main.py --config configs/experiments.yaml --run all
 

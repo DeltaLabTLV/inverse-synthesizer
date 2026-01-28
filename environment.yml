@@ -1,0 +1,33 @@
+name: inversynth-extensions
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  # ---- Python ----
+  - python=3.10
+
+  # ---- Core scientific stack ----
+  - numpy>=1.23
+  - scipy>=1.9
+  - pyyaml>=6.0
+  - soundfile>=0.12
+
+  # ---- PyTorch (CUDA-enabled) ----
+  - pytorch>=2.1
+  - torchvision
+  - torchaudio
+  - pytorch-cuda=12.1
+
+  # ---- Training / logging ----
+  - tensorboard>=2.13
+  - tqdm>=4.65
+
+  # ---- Utilities ----
+  - einops>=0.7
+  - librosa>=0.10
+
+  # ---- Pip-only deps (if any) ----
+  - pip
+  - pip:
+      - matplotlib>=3.7

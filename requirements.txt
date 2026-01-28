@@ -1,0 +1,19 @@
+# Core
+numpy>=1.23
+scipy>=1.9
+pyyaml>=6.0
+soundfile>=0.12
+einops>=0.7
+librosa>=0.10
+
+# PyTorch (choose ONE installation method)
+torch>=2.1
+torchaudio>=2.1
+torchvision>=0.16
+
+# Training / logging
+tensorboard>=2.13
+tqdm>=4.65
+
+# Visualization / debugging
+matplotlib>=3.7
